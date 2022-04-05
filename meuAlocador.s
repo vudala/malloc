@@ -162,7 +162,52 @@ alocaMem:
     subq    $SIZE_LENGTH, %r10
     subq    $1, %r10
 
-    
+    START_WHILE:
+    # Pergunta se o bloco está livre
+    cmpq    $FREE_LABEL, (%rdx)
+    jne     SKIP
+
+    # Pergunta se há espaço o suficiente
+    cmpq    STATUS_LENGTH(%rdx), %rcx
+    jge     FOUND_FREE_SPACE
+
+    SKIP:
+    movq    STATUS_LENGTH(%rdx), %r8
+    addq    $STATUS_LENGTH, %rdx
+    addq    $SIZE_LENGTH, %rdx
+    addq    %r8, %rdx
+
+    cmpq    %rdx, %r10
+    jg      INCREASE_MEMORY_DOMAIN
+    jmp     START_WHILE
+
+    INCREASE_MEMORY_DOMAIN:
+    pushq   $TOTAL_LENGTH
+    call    brka
+    addq    $8, %rsp
+    movq    %rax, FIM
+    jmp     UPDATE_LIMIT
+
+    FOUND_FREE_SPACE:
+    /* Caso o espaços disponivel seja maior que o requerido, reparte o espaço*/
+
+    # Calcula o novo tamanho do bloco restante
+    movq    STATUS_LENGTH(%rdx), %r8
+    subq    %rcx, %r8
+    subq    $STATUS_LENGTH, %r8
+    subq    $SIZE_LENGTH, %r8
+    # Caso não haja espaço restante não separa o bloco
+    movq    $0, %rbx
+    cmpq    %r8, %rbx
+    jle     END
+    movq    %rdx, %r9
+    addq    $STATUS_LENGTH, %r9
+    addq    $SIZE_LENGTH, %r9
+    addq    %rcx, %r9
+    movq    $FREE_LABEL, %r9
+    movq    %r8, STATUS_LENGTH(%r9)
+
+    END:
     movq    $OCCUPIED_LABEL, (%rdx)
     movq    %rcx, STATUS_LENGTH(%rdx)
 
