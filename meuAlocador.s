@@ -179,7 +179,7 @@ alocaMem:
     addq    $SIZE_LENGTH, %rdx
     addq    %r8, %rdx
 
-    cmpq    %rdx, %r10
+    cmpq    %r10, %rdx
     jg      INCREASE_MEMORY_DOMAIN
     jmp     START_WHILE
 
@@ -198,15 +198,16 @@ alocaMem:
     subq    %rcx, %r8
     subq    $STATUS_LENGTH, %r8
     subq    $SIZE_LENGTH, %r8
+
     # Caso não haja espaço restante não separa o bloco
     movq    $0, %rbx
-    cmpq    %r8, %rbx
+    cmpq    %rbx, %r8
     jle     END
     movq    %rdx, %r9
     addq    $STATUS_LENGTH, %r9
     addq    $SIZE_LENGTH, %r9
     addq    %rcx, %r9
-    movq    $FREE_LABEL, %r9
+    movq    $FREE_LABEL, (%r9)
     movq    %r8, STATUS_LENGTH(%r9)
 
     END:
