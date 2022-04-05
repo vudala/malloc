@@ -5,8 +5,10 @@ Aumentar FIM significa aumentar o domínio.
 Retorno de funções: todos os retornos serão escritos em %rax
 */
 
-
-
+.globl iniciaAlocador
+.globl finalizaAlocador
+.globl alocaMem
+.globl liberaMem
 .globl _start
 
 .section .data
@@ -19,7 +21,7 @@ FIM:    .quad   0
 .equ STATUS_LENGTH,     8
 .equ SIZE_LENGTH,       8
 .equ CHUNK_LENGTH,      4096
-.equ TOTAL_LENGTH,      5012
+.equ INCREMENT_LENGTH,  5012
 
 .PointerMask:
     .string "%p\n"
@@ -40,23 +42,31 @@ brk:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    movq    16(%rbp), %rcx
-
     /* param == 0 ? param = param + brk(0) : pass */
     movq    $0, %rdx
-    cmpq    %rcx, %rdx
+    cmpq    %rdi, %rdx
     je      EQUAL_ZERO
-    pushq   %rcx
-    pushq   $0
+    pushq   %rdi
+    movq    $0, %rdi
     call    brk
-    addq    $8, %rsp
-    popq    %rcx
-    addq    %rax, %rcx
+    popq    %rdi
+    addq    %rax, %rdi
 
     EQUAL_ZERO:
-    movq    %rcx, %rdi
     movq    $12, %rax
     syscall
+
+    popq    %rbp
+    ret
+
+
+expandDomain:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    movq    $INCREMENT_LENGTH, %rdi
+    call    brk
+    movq    %rax, FIM
 
     popq    %rbp
     ret
@@ -74,15 +84,13 @@ iniciaAlocador:
     call    printf
 
     ALREADY_STARTED:
-    pushq   $0
+    movq    $0, %rdi
     call    brk
     movq    %rax, INICIO
-    addq    $8, %rsp
 
-    pushq   $TOTAL_LENGTH
+    movq    $INCREMENT_LENGTH, %rdi
     call    brk
     movq    %rax, FIM
-    addq    $8, %rsp
 
     movq    INICIO, %rsi
     movq    $FREE_LABEL, (%rsi)
@@ -107,7 +115,7 @@ finalizaAlocador:
 
 
 /* Imprime o começo e o fim do domínio */
-imprimeDominioHeap:
+printDomain:
     pushq   %rbp
     movq    %rsp, %rbp
 
@@ -131,7 +139,7 @@ liberaMem:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    movq    16(%rbp), %rcx
+    movq    %rdi, %rcx
     subq    $STATUS_LENGTH, %rcx
     subq    $SIZE_LENGTH, %rcx
     movq    $FREE_LABEL, (%rcx)
@@ -145,49 +153,46 @@ alocaMem:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    # Recupera o parâmetro e adiciona o tamanho do cabeçalho
-    movq    16(%rbp), %rcx
+    # Recupera o parâmetro
+    movq    %rdi, %rcx
 
     # Determina onde começa a procura
     movq    INICIO, %rdx
 
     # Determina o limite de onde procurar
     /*
-    %r10 delimita a memória que ainda pode ser alocadaa,
+    %r10 delimita a memória que ainda pode ser alocada,
     Caso (%rdx > FIM - STATUS_L - SIZE_L - 1) não há como alocar memoria neste espaço
     Então o FIM terá de ser expandido
     */
+    movq    $FREE_LABEL, %rbx
 
     UPDATE_LIMIT:
     movq    FIM, %r10
     subq    $STATUS_LENGTH, %r10
     subq    $SIZE_LENGTH, %r10
     subq    $1, %r10
-
-    # Testa se o bloco está livre
-    movq    $FREE_LABEL, %rbx
+    
     START_WHILE:
+    # Testa se o bloco está livre
     cmpq    (%rdx), %rbx
-    jne      SKIP
+    jne     NOT_FREE
     # Testa se há espaço o suficiente
     cmpq    %rcx, STATUS_LENGTH(%rdx)
     jge     FOUND_FREE_SPACE
 
-    SKIP:
+    NOT_FREE:
     movq    STATUS_LENGTH(%rdx), %r8
     addq    $STATUS_LENGTH, %rdx
     addq    $SIZE_LENGTH, %rdx
     addq    %r8, %rdx
 
     cmpq    %r10, %rdx
-    jg      INCREASE_MEMORY_DOMAIN
+    jg      EXPAND_DOMAIN
     jmp     START_WHILE
 
-    INCREASE_MEMORY_DOMAIN:
-    pushq   $TOTAL_LENGTH
-    call    brk
-    addq    $8, %rsp
-    movq    %rax, FIM
+    EXPAND_DOMAIN:
+    call    expandDomain
     jmp     UPDATE_LIMIT
 
     FOUND_FREE_SPACE:
@@ -214,20 +219,9 @@ alocaMem:
     movq    $OCCUPIED_LABEL, (%rdx)
     movq    %rcx, STATUS_LENGTH(%rdx)
 
+    addq    $STATUS_LENGTH, %rdx
+    addq    $SIZE_LENGTH, %rdx
+    movq    %rdx, %rax
+
     popq    %rbp
     ret
-
-
-_start:
-    call    iniciaAlocador
-
-    call    imprimeDominioHeap
-
-    pushq   $100
-    call    alocaMem
-    addq    $8, %rsp
-    
-    call    finalizaAlocador
-    
-    movq    $60, %rax
-    syscall
