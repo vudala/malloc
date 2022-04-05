@@ -162,13 +162,13 @@ alocaMem:
     subq    $SIZE_LENGTH, %r10
     subq    $1, %r10
 
+    # Testa se o bloco está livre
+    movq    $FREE_LABEL, %rbx
     START_WHILE:
-    # Pergunta se o bloco está livre
-    cmpq    $FREE_LABEL, (%rdx)
-    jne     SKIP
-
-    # Pergunta se há espaço o suficiente
-    cmpq    STATUS_LENGTH(%rdx), %rcx
+    cmpq    (%rdx), %rbx
+    jne      SKIP
+    # Testa se há espaço o suficiente
+    cmpq    %rcx, STATUS_LENGTH(%rdx)
     jge     FOUND_FREE_SPACE
 
     SKIP:
@@ -183,7 +183,7 @@ alocaMem:
 
     INCREASE_MEMORY_DOMAIN:
     pushq   $TOTAL_LENGTH
-    call    brka
+    call    brk
     addq    $8, %rsp
     movq    %rax, FIM
     jmp     UPDATE_LIMIT
@@ -217,11 +217,14 @@ alocaMem:
 
 _start:
     call    iniciaAlocador
-    call    finalizaAlocador
+
+    call    imprimeDominioHeap
 
     pushq   $100
     call    alocaMem
     addq    $8, %rsp
+    
+    call    finalizaAlocador
     
     movq    $60, %rax
     syscall
