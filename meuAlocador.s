@@ -132,6 +132,8 @@ liberaMem:
     movq    %rsp, %rbp
 
     movq    16(%rbp), %rcx
+    subq    $STATUS_LENGTH, %rcx
+    subq    $SIZE_LENGTH, %rcx
     movq    $FREE_LABEL, (%rcx)
     
     popq    %rbp
