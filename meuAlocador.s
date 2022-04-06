@@ -22,7 +22,7 @@ FIM:    .quad   0
 .equ STATUS_LENGTH,     8
 .equ SIZE_LENGTH,       8
 .equ CHUNK_LENGTH,      4096
-.equ INCREMENT_LENGTH,  5012
+.equ INCREMENT_LENGTH,  4112
 
 .PointerMask:
     .string "%p\n"
@@ -37,7 +37,7 @@ FIM:    .quad   0
     .string "Start\n"
 
 .BlockMask:
-    .string " %ld | %ld |  MEMORY CONTENT | "
+    .string " %ld | %ld |  %ld | "
 
 .BreakLine:
     .string "\n"
@@ -131,8 +131,9 @@ imprimeBlocos:
 
     pushq   %r11
     
-    movq    (%r11), %rsi
+    movq    %r11, %rcx
     movq    STATUS_LENGTH(%r11), %rdx
+    movq    (%r11), %rsi
     movq    $.BlockMask, %rdi
     movq    $0, %rax
     call    printf
@@ -227,12 +228,12 @@ printDomain:
     movq    %rsp, %rbp
 
     movq    INICIO, %rsi
-    movq    $.PointerMask, %rdi
+    movq    $.IntegerMask, %rdi
     movq	$0, %rax
     call    printf
 
     movq    FIM, %rsi
-    movq    $.PointerMask, %rdi
+    movq    $.IntegerMask, %rdi
     movq	$0, %rax
     call    printf
 
