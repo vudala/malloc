@@ -9,6 +9,7 @@ Retorno de funções: todos os retornos serão escritos em %rax
 .globl finalizaAlocador
 .globl alocaMem
 .globl liberaMem
+.globl imprimeBlocos
 .globl _start
 
 .section .data
@@ -34,6 +35,12 @@ FIM:    .quad   0
 
 .StartString:
     .string "Start\n"
+
+.BlockMask:
+    .string " %ld | %ld |  MEMORY CONTENT | "
+
+.BreakLine:
+    .string "\n"
 
 .section .text
 
@@ -77,6 +84,7 @@ iniciaAlocador:
     movq    %rsp, %rbp
 
     movq    $.StartString, %rdi
+    movq    $0, %rax
     call    printf
 
     movq    $0, %rdi
@@ -104,6 +112,47 @@ finalizaAlocador:
     movq    INICIO, %rdi
     syscall
     movq    %rax, FIM
+
+    popq    %rbp
+    ret
+
+
+imprimeBlocos:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    movq    INICIO, %r11
+
+    PRINT_START:
+    cmpq    FIM, %r11
+    jge     PRINT_END
+
+    # store r11
+
+    pushq   %r11
+    
+    movq    (%r11), %rsi
+    movq    STATUS_LENGTH(%r11), %rdx
+    movq    $.BlockMask, %rdi
+    movq    $0, %rax
+    call    printf
+
+    popq    %r11
+
+    # retrieve r11
+
+    movq    STATUS_LENGTH(%r11), %r12
+    addq    $STATUS_LENGTH, %r11
+    addq    $SIZE_LENGTH, %r11
+    addq    %r12, %r11
+
+    jmp     PRINT_START
+
+    PRINT_END:
+
+    movq    $.BreakLine, %rdi
+    movq    $0, %rax
+    call    printf
 
     popq    %rbp
     ret
@@ -179,10 +228,12 @@ printDomain:
 
     movq    INICIO, %rsi
     movq    $.PointerMask, %rdi
+    movq	$0, %rax
     call    printf
 
     movq    FIM, %rsi
     movq    $.PointerMask, %rdi
+    movq	$0, %rax
     call    printf
 
     popq    %rbp
