@@ -37,7 +37,7 @@ FIM:    .quad   0
     .string "Start\n"
 
 .BlockMask:
-    .string " %ld | %ld |  %ld | "
+    .string "| %ld | %5.ld |  %ld "
 
 .BreakLine:
     .string "\n"
@@ -177,13 +177,13 @@ mergeBlocks:
     addq    STATUS_LENGTH(%r9), %r10
 
     # Caso o bloco atual ou o próximo estejam fora do dominio, termina o merge
+    TRY_TO_MERGE:
     cmpq    FIM, %r9
     jge     MERGE_END
     cmpq    FIM, %r10
     jge     MERGE_END
 
     # Ve se o bloco atual e o próximo estão livres
-    TRY_TO_MERGE:
     cmpq    %rbx, (%r9)
     jne     CURRENT_BLOCK_NOT_FREE
     cmpq    %rbx, (%r10)
@@ -197,9 +197,9 @@ mergeBlocks:
     addq    $SIZE_LENGTH, STATUS_LENGTH(%r9)
 
     # Reaponta o endereço do próximo bloco
+    addq    STATUS_LENGTH(%r10), %r10
     addq    $STATUS_LENGTH, %r10
     addq    $SIZE_LENGTH, %r10
-    addq    STATUS_LENGTH(%r10), %r10
 
     jmp     TRY_TO_MERGE
 
