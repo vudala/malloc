@@ -76,14 +76,9 @@ iniciaAlocador:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    /* Chama printf caso seja a primeira vez que a função é invocada */
-    movq    $0, %rbx
-    cmpq    %rbx, INICIO
-    jne     ALREADY_STARTED
     movq    $.StartString, %rdi
     call    printf
 
-    ALREADY_STARTED:
     movq    $0, %rdi
     call    brk
     movq    %rax, INICIO
@@ -114,19 +109,80 @@ finalizaAlocador:
     ret
 
 
-/* Imprime o começo e o fim do domínio */
+/* Este procedimento funde os blocos livres conectados em um bloco unico */
+mergeBlocks:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    movq    $FREE_LABEL, %rbx
+
+    # Determina onde começa o merge, %r9 contém o endereço do bloco atual
+    movq    INICIO, %r9
+
+    # Armazena em %r10 o endereço do próximo bloco
+    START_WHILE_MERGE:
+    movq    %r9, %r10
+    addq    $STATUS_LENGTH, %r10
+    addq    $SIZE_LENGTH, %r10
+    addq    STATUS_LENGTH(%r9), %r10
+
+    # Caso o bloco atual ou o próximo estejam fora do dominio, termina o merge
+    cmpq    FIM, %r9
+    jge     MERGE_END
+    cmpq    FIM, %r10
+    jge     MERGE_END
+
+    # Ve se o bloco atual e o próximo estão livres
+    TRY_TO_MERGE:
+    cmpq    %rbx, (%r9)
+    jne     CURRENT_BLOCK_NOT_FREE
+    cmpq    %rbx, (%r10)
+    jne     NEXT_BLOCK_NOT_FREE
+
+    # Casos estejam livres, adiciona o tamanho do próximo bloco no bloco atual
+    MERGE_IT:
+    movq    STATUS_LENGTH(%r10), %r11
+    addq    %r11, STATUS_LENGTH(%r9)
+    addq    $STATUS_LENGTH, STATUS_LENGTH(%r9)
+    addq    $SIZE_LENGTH, STATUS_LENGTH(%r9)
+
+    # Reaponta o endereço do próximo bloco
+    addq    $STATUS_LENGTH, %r10
+    addq    $SIZE_LENGTH, %r10
+    addq    STATUS_LENGTH(%r10), %r10
+
+    jmp     TRY_TO_MERGE
+
+    # Caso o bloco atual não esteja livre reaponta o endereço do bloco atual
+    CURRENT_BLOCK_NOT_FREE:
+    movq    %r10, %r9
+    jmp     START_WHILE_MERGE
+
+    # Caso o próximo bloco não esteja livre reaponta o enderço do bloco atual e volta ao começo do laço
+    NEXT_BLOCK_NOT_FREE:
+    movq    %r10, %r9
+    addq    STATUS_LENGTH(%r10), %r9
+    addq    $STATUS_LENGTH, %r9
+    addq    $SIZE_LENGTH, %r9
+    jmp     START_WHILE_MERGE
+
+    MERGE_END:
+
+    popq    %rbp
+    ret
+
+
+/* Imprime os endereços do começo e do fim do domínio */
 printDomain:
     pushq   %rbp
     movq    %rsp, %rbp
 
     movq    INICIO, %rsi
     movq    $.PointerMask, %rdi
-    movq    $0, %rax
     call    printf
 
     movq    FIM, %rsi
     movq    $.PointerMask, %rdi
-    movq    $0, %rax
     call    printf
 
     popq    %rbp
@@ -143,6 +199,8 @@ liberaMem:
     subq    $STATUS_LENGTH, %rcx
     subq    $SIZE_LENGTH, %rcx
     movq    $FREE_LABEL, (%rcx)
+
+    call    mergeBlocks
     
     popq    %rbp
     ret
@@ -156,7 +214,7 @@ alocaMem:
     # Recupera o parâmetro
     movq    %rdi, %rcx
 
-    # Determina onde começa a procura
+    # Determina em qual bloco começa a procura por espaço
     movq    INICIO, %rdx
 
     # Determina o limite de onde procurar
@@ -167,35 +225,40 @@ alocaMem:
     */
     movq    $FREE_LABEL, %rbx
 
-    UPDATE_LIMIT:
+    ALLOC_UPDATE_LIMIT:
     movq    FIM, %r10
     subq    $STATUS_LENGTH, %r10
     subq    $SIZE_LENGTH, %r10
     subq    $1, %r10
     
-    START_WHILE:
+    ALLOC_START_WHILE:
     # Testa se o bloco está livre
     cmpq    (%rdx), %rbx
-    jne     NOT_FREE
+    jne     ALLOC_NOT_FREE
     # Testa se há espaço o suficiente
     cmpq    %rcx, STATUS_LENGTH(%rdx)
-    jge     FOUND_FREE_SPACE
+    jge     ALLOC_FOUND_FREE_SPACE
 
-    NOT_FREE:
+    # Caso o bloco atual não esteja livre ou não haja espaço o suficiente, vai para o próximo bloco
+    ALLOC_NOT_FREE:
     movq    STATUS_LENGTH(%rdx), %r8
     addq    $STATUS_LENGTH, %rdx
     addq    $SIZE_LENGTH, %rdx
     addq    %r8, %rdx
 
+    # Verifica se o próximo bloco a ser analisado está dentro dos limites do domínio, do contrário o domínio deve ser expandido
     cmpq    %r10, %rdx
-    jg      EXPAND_DOMAIN
-    jmp     START_WHILE
+    jge     ALLOC_EXPAND_DOMAIN
+    jmp     ALLOC_START_WHILE
 
-    EXPAND_DOMAIN:
+    ALLOC_EXPAND_DOMAIN:
     call    expandDomain
-    jmp     UPDATE_LIMIT
+    movq    $FREE_LABEL, (%rdx)
+    movq    $CHUNK_LENGTH, STATUS_LENGTH(%rdx)
+    call    mergeBlocks
+    jmp     ALLOC_UPDATE_LIMIT
 
-    FOUND_FREE_SPACE:
+    ALLOC_FOUND_FREE_SPACE:
     /* Caso o espaços disponivel seja maior que o requerido, reparte o espaço*/
 
     # Calcula o novo tamanho do bloco restante
@@ -207,7 +270,7 @@ alocaMem:
     # Caso não haja espaço restante não separa o bloco
     movq    $0, %rbx
     cmpq    %rbx, %r8
-    jle     END
+    jle     ALLOC_END
     movq    %rdx, %r9
     addq    $STATUS_LENGTH, %r9
     addq    $SIZE_LENGTH, %r9
@@ -215,7 +278,7 @@ alocaMem:
     movq    $FREE_LABEL, (%r9)
     movq    %r8, STATUS_LENGTH(%r9)
 
-    END:
+    ALLOC_END:
     movq    $OCCUPIED_LABEL, (%rdx)
     movq    %rcx, STATUS_LENGTH(%rdx)
 
