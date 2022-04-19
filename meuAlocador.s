@@ -15,14 +15,13 @@ Retorno de funções: todos os retornos serão escritos em %rax
 .section .data
 INICIO: .quad   0
 FIM:    .quad   0
+CHUNK_SIZE: .quad   4096
 
 # Constantes
 .equ FREE_LABEL,        0
 .equ OCCUPIED_LABEL,    1
 .equ STATUS_LENGTH,     8
 .equ SIZE_LENGTH,       8
-.equ CHUNK_LENGTH,      4096
-.equ INCREMENT_LENGTH,  4112
 
 .PointerMask:
     .string "%p\n"
@@ -44,14 +43,14 @@ FIM:    .quad   0
 
 .section .text
 
-# brk(long int)
+# brk(long int), o parâmetro vem em %rdi
 brk:
     pushq   %rbp
     movq    %rsp, %rbp
 
     /* param == 0 ? param = param + brk(0) : pass */
-    movq    $0, %rdx
-    cmpq    %rdi, %rdx
+    movq    $0, %r15
+    cmpq    %rdi, %r15
     je      EQUAL_ZERO
     pushq   %rdi
     movq    $0, %rdi
@@ -62,18 +61,6 @@ brk:
     EQUAL_ZERO:
     movq    $12, %rax
     syscall
-
-    popq    %rbp
-    ret
-
-
-expandDomain:
-    pushq   %rbp
-    movq    %rsp, %rbp
-
-    movq    $INCREMENT_LENGTH, %rdi
-    call    brk
-    movq    %rax, FIM
 
     popq    %rbp
     ret
@@ -91,13 +78,16 @@ iniciaAlocador:
     call    brk
     movq    %rax, INICIO
 
-    movq    $INCREMENT_LENGTH, %rdi
+    movq    CHUNK_SIZE, %rdi
+    addq    $STATUS_LENGTH, %rdi
+    addq    $SIZE_LENGTH, %rdi
     call    brk
     movq    %rax, FIM
 
     movq    INICIO, %rsi
     movq    $FREE_LABEL, (%rsi)
-    movq    $CHUNK_LENGTH, STATUS_LENGTH(%rsi)
+    movq    CHUNK_SIZE, %rax
+    movq    %rax, STATUS_LENGTH(%rsi)
 
     popq    %rbp
     ret
@@ -117,6 +107,30 @@ finalizaAlocador:
     ret
 
 
+expandDomain:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    movq    FIM, %rsi
+
+    movq    CHUNK_SIZE, %rdi
+
+    addq    $STATUS_LENGTH, %rdi
+    addq    $SIZE_LENGTH, %rdi
+    call    brk
+    movq    %rax, FIM
+
+    movq    $FREE_LABEL, (%rsi)
+    movq    CHUNK_SIZE, %rax
+    movq    %rax, STATUS_LENGTH(%rsi)
+
+    movq    CHUNK_SIZE, %rax
+    addq    %rax, CHUNK_SIZE
+
+    popq    %rbp
+    ret
+
+
 imprimeBlocos:
     pushq   %rbp
     movq    %rsp, %rbp
@@ -126,8 +140,6 @@ imprimeBlocos:
     PRINT_START:
     cmpq    FIM, %r11
     jge     PRINT_END
-
-    # store r11
 
     pushq   %r11
     
@@ -139,9 +151,7 @@ imprimeBlocos:
     call    printf
 
     popq    %r11
-
-    # retrieve r11
-
+    
     movq    STATUS_LENGTH(%r11), %r12
     addq    $STATUS_LENGTH, %r11
     addq    $SIZE_LENGTH, %r11
@@ -241,7 +251,7 @@ printDomain:
     ret
 
 
-/* Escreve free na label indicada pelo parâmetro */
+/* Escreve free na label indicada pelo parâmetro, e então tenta fundir os blocos livres */
 # liberaMem(long int)
 liberaMem:
     pushq   %rbp
@@ -263,80 +273,83 @@ alocaMem:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    # Recupera o parâmetro
-    movq    %rdi, %rcx
+    # recupera o parametro
+    movq    %rdi, %r8
 
-    # Determina em qual bloco começa a procura por espaço
-    movq    INICIO, %rdx
+    # determina o inicio da busca
+    movq    INICIO, %r9
 
-    # Determina o limite de onde procurar
-    /*
-    %r10 delimita a memória que ainda pode ser alocada,
-    Caso (%rdx > FIM - STATUS_L - SIZE_L - 1) não há como alocar memoria neste espaço
-    Então o FIM terá de ser expandido
-    */
-    movq    $FREE_LABEL, %rbx
+    # r15 registrador auxiliar
 
-    ALLOC_UPDATE_LIMIT:
-    movq    FIM, %r10
-    subq    $STATUS_LENGTH, %r10
-    subq    $SIZE_LENGTH, %r10
-    subq    $1, %r10
-    
-    ALLOC_START_WHILE:
-    # Testa se o bloco está livre
-    cmpq    (%rdx), %rbx
-    jne     ALLOC_NOT_FREE
-    # Testa se há espaço o suficiente
-    cmpq    %rcx, STATUS_LENGTH(%rdx)
-    jge     ALLOC_FOUND_FREE_SPACE
+    # pergunta se o bloco esta livre
 
-    # Caso o bloco atual não esteja livre ou não haja espaço o suficiente, vai para o próximo bloco
-    ALLOC_NOT_FREE:
-    movq    STATUS_LENGTH(%rdx), %r8
-    addq    $STATUS_LENGTH, %rdx
-    addq    $SIZE_LENGTH, %rdx
-    addq    %r8, %rdx
+    START_WHILE:
 
-    # Verifica se o próximo bloco a ser analisado está dentro dos limites do domínio, do contrário o domínio deve ser expandido
-    cmpq    %r10, %rdx
-    jge     ALLOC_EXPAND_DOMAIN
-    jmp     ALLOC_START_WHILE
+    movq    $FREE_LABEL, %r15
+    cmpq    (%r9), %r15
+    jne     BLOCK_NOT_FREE
 
-    ALLOC_EXPAND_DOMAIN:
+    # pergunta se há espaço o suficiente
+    cmpq    %r8, STATUS_LENGTH(%r9)
+    jge     FOUND_FREE_SPACE
+
+    # aponta pro proximo bloco
+    BLOCK_NOT_FREE:
+    movq    STATUS_LENGTH(%r9), %r15
+    addq    %r15, %r9
+    addq    $STATUS_LENGTH, %r9
+    addq    $SIZE_LENGTH, %r9
+
+    # pergunta se bateu no fim
+    cmpq    %r9, FIM
+    je      EXPAND_DOMAIN
+    jmp     START_WHILE
+
+    # expande o dominio
+    EXPAND_DOMAIN:
+
     call    expandDomain
-    movq    $FREE_LABEL, (%rdx)
-    movq    $CHUNK_LENGTH, STATUS_LENGTH(%rdx)
-    call    mergeBlocks
-    jmp     ALLOC_UPDATE_LIMIT
+    
+    jmp     START_WHILE
 
-    ALLOC_FOUND_FREE_SPACE:
+    
+
+    FOUND_FREE_SPACE:
+
     /* Caso o espaços disponivel seja maior que o requerido, reparte o espaço*/
 
     # Calcula o novo tamanho do bloco restante
-    movq    STATUS_LENGTH(%rdx), %r8
-    subq    %rcx, %r8
-    subq    $STATUS_LENGTH, %r8
-    subq    $SIZE_LENGTH, %r8
+    movq    STATUS_LENGTH(%r9), %r15
+    subq    %r8, %r15
+    subq    $STATUS_LENGTH, %r15
+    subq    $SIZE_LENGTH, %r15
 
     # Caso não haja espaço restante não separa o bloco
-    movq    $0, %rbx
-    cmpq    %rbx, %r8
-    jle     ALLOC_END
-    movq    %rdx, %r9
-    addq    $STATUS_LENGTH, %r9
-    addq    $SIZE_LENGTH, %r9
-    addq    %rcx, %r9
-    movq    $FREE_LABEL, (%r9)
-    movq    %r8, STATUS_LENGTH(%r9)
+    movq    $0, %r11
+    cmpq    %r11, %r15
+    jle     ALLOC_DONT_SPLIT
+
+    # Separa o bloco em dois: a primeira parte sendo o espaço requerido e a segunda o espaço restante
+    movq    %r9, %r11
+    addq    $STATUS_LENGTH, %r11
+    addq    $SIZE_LENGTH, %r11
+    addq    %r8, %r11
+    movq    $FREE_LABEL, (%r11)
+    movq    %r15, STATUS_LENGTH(%r11)
+    jmp     ALLOC_END
+
+    ALLOC_DONT_SPLIT:
+    # Caso não haja espaço o suficiente para separar o bloco em dois, devolve o bloco inteiro
+    movq    STATUS_LENGTH(%r9), %r8
 
     ALLOC_END:
-    movq    $OCCUPIED_LABEL, (%rdx)
-    movq    %rcx, STATUS_LENGTH(%rdx)
+    # Escreve OCUPADO no bloco, e seu novo tamanho
+    movq    $OCCUPIED_LABEL, (%r9)
+    movq    %r8, STATUS_LENGTH(%r9)
 
-    addq    $STATUS_LENGTH, %rdx
-    addq    $SIZE_LENGTH, %rdx
-    movq    %rdx, %rax
+    addq    $STATUS_LENGTH, %r9
+    addq    $SIZE_LENGTH, %r9
+    movq    %r9, %rax
 
     popq    %rbp
     ret
