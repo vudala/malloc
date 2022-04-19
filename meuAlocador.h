@@ -2,15 +2,6 @@
 #ifndef MEUALOCADOR_INCLUDED
 #define MEUALOCADOR_INCLUDED
 
-// 0 means livre, != 0 means ocupado
-union MemoryAddress {
-    long int as_integer;
-    void *   as_pointer;
-};
-
-typedef union MemoryAddress MemoryAddress;
-
-
 // Protótipos (seção 6.1.2 e Projeto de Implementação 6.2)
 void iniciaAlocador();   // Executa syscall brk para obter o endereço do topo
                          // corrente da heap e o armazena em uma
@@ -21,7 +12,7 @@ void finalizaAlocador(); // Executa syscall brk para restaurar o valor
 
 int liberaMem(void* bloco); // indica que o bloco está livre.
 
-void* alocaMem(int num_bytes); // 1. Procura um bloco livre com tamanho maior ou
+void* alocaMem(long int num_bytes); // 1. Procura um bloco livre com tamanho maior ou
                               //    igual à num_bytes.
                               // 2. Se encontrar, indica que o bloco está
                               //    ocupado e retorna o endereço inicial do bloco;
@@ -36,5 +27,7 @@ void imprimeMapa();       // imprime um mapa da memória da região da heap.
                           // a impressão dos bytes do bloco de cada nó depende
                           // se o bloco estiver livre ou ocupado. Se estiver livre, imprime o
                           // caractere -". Se estiver ocupado, imprime o caractere "+".
+
+void imprimeBlocos();
 
 #endif
