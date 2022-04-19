@@ -48,7 +48,7 @@ brk:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    /* param == 0 ? param = param + brk(0) : pass */
+    # param == 0 ? brk(0) : param + brk(0)
     movq    $0, %r15
     cmpq    %rdi, %r15
     je      EQUAL_ZERO
@@ -65,11 +65,12 @@ brk:
     popq    %rbp
     ret
 
-
+# iniciaAlocador()
 iniciaAlocador:
     pushq   %rbp
     movq    %rsp, %rbp
 
+    # Imprime a string inicial pra setar o buffer do printf
     movq    $.StartString, %rdi
     movq    $0, %rax
     call    printf
@@ -113,19 +114,21 @@ expandDomain:
 
     movq    FIM, %rsi
 
-    movq    CHUNK_SIZE, %rdi
+    # Dobra o tamanho da chunk
+    movq    CHUNK_SIZE, %rax
+    addq    %rax, CHUNK_SIZE
 
+    # Aumenta o domínio
+    movq    CHUNK_SIZE, %rdi
     addq    $STATUS_LENGTH, %rdi
     addq    $SIZE_LENGTH, %rdi
     call    brk
     movq    %rax, FIM
 
+    # Escreve LIVRE no novo bloco alocado
     movq    $FREE_LABEL, (%rsi)
     movq    CHUNK_SIZE, %rax
     movq    %rax, STATUS_LENGTH(%rsi)
-
-    movq    CHUNK_SIZE, %rax
-    addq    %rax, CHUNK_SIZE
 
     popq    %rbp
     ret
@@ -169,7 +172,7 @@ imprimeBlocos:
     ret
 
 
-/* Este procedimento funde os blocos livres conectados em um bloco unico */
+# Este procedimento funde os blocos livres conectados em um bloco unico
 mergeBlocks:
     pushq   %rbp
     movq    %rsp, %rbp
@@ -232,7 +235,7 @@ mergeBlocks:
     ret
 
 
-/* Imprime os endereços do começo e do fim do domínio */
+# Imprime os endereços do começo e do fim do domínio
 printDomain:
     pushq   %rbp
     movq    %rsp, %rbp
@@ -251,12 +254,13 @@ printDomain:
     ret
 
 
-/* Escreve free na label indicada pelo parâmetro, e então tenta fundir os blocos livres */
+# Escreve free na label indicada pelo parâmetro, e então tenta fundir os blocos livres
 # liberaMem(long int)
 liberaMem:
     pushq   %rbp
     movq    %rsp, %rbp
 
+    # Escreve LIVRE no bloco
     movq    %rdi, %rcx
     subq    $STATUS_LENGTH, %rcx
     subq    $SIZE_LENGTH, %rcx
@@ -273,51 +277,38 @@ alocaMem:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    # recupera o parametro
+    # Recupera o parâmetro
     movq    %rdi, %r8
 
-    # determina o inicio da busca
+    # Determina onde inicia a busca
     movq    INICIO, %r9
 
-    # r15 registrador auxiliar
-
-    # pergunta se o bloco esta livre
-
     START_WHILE:
-
+    # Verifica se o bloco está livre
     movq    $FREE_LABEL, %r15
     cmpq    (%r9), %r15
     jne     BLOCK_NOT_FREE
 
-    # pergunta se há espaço o suficiente
+    # Verifica se há espaço o suficiente
     cmpq    %r8, STATUS_LENGTH(%r9)
     jge     FOUND_FREE_SPACE
 
-    # aponta pro proximo bloco
+    # Aponta para o próximo bloco
     BLOCK_NOT_FREE:
     movq    STATUS_LENGTH(%r9), %r15
     addq    %r15, %r9
     addq    $STATUS_LENGTH, %r9
     addq    $SIZE_LENGTH, %r9
 
-    # pergunta se bateu no fim
+    # Verifica se chegou no fim
     cmpq    %r9, FIM
-    je      EXPAND_DOMAIN
+    jne     START_WHILE
+    # Expande o domínio
+    call    expandDomain  
     jmp     START_WHILE
-
-    # expande o dominio
-    EXPAND_DOMAIN:
-
-    call    expandDomain
-    
-    jmp     START_WHILE
-
-    
 
     FOUND_FREE_SPACE:
-
-    /* Caso o espaços disponivel seja maior que o requerido, reparte o espaço*/
-
+    # Caso o espaços disponivel seja maior que o requerido, reparte o espaço
     # Calcula o novo tamanho do bloco restante
     movq    STATUS_LENGTH(%r9), %r15
     subq    %r8, %r15
