@@ -3,6 +3,8 @@ Domínio: a parte da heap que estamos operando sobre, começa em INICIO e termin
 Aumentar FIM significa aumentar o domínio.
 
 Retorno de funções: todos os retornos serão escritos em %rax
+
+Parâmetros: os parâmetros são passados por registradores, seguindo a ordem: %rdi, %rsi, ...
 */
 
 .globl iniciaAlocador
@@ -16,7 +18,8 @@ Retorno de funções: todos os retornos serão escritos em %rax
 .section .data
 INICIO: .quad   0
 FIM:    .quad   0
-CHUNK_SIZE: .quad   300
+CHUNK_SIZE: .quad   256
+LAST_FIT: .quad   0
 
 # Constantes
 .equ FREE_LABEL,        0
@@ -54,7 +57,7 @@ CHUNK_SIZE: .quad   300
 .section .text
 
 
-# brk(long int), o parâmetro vem em %rdi
+# brk(long int)
 brk:
     pushq   %rbp
     movq    %rsp, %rbp
@@ -87,16 +90,21 @@ iniciaAlocador:
     movq    $0, %rax
     call    printf
 
+    # Determina o INICIO do domínio
     movq    $0, %rdi
     call    brk
     movq    %rax, INICIO
 
+    movq    %rax, LAST_FIT
+
+    # Determina o FIM do domínio
     movq    CHUNK_SIZE, %rdi
     addq    $STATUS_LENGTH, %rdi
     addq    $SIZE_LENGTH, %rdi
     call    brk
     movq    %rax, FIM
 
+    # Inicializa o bloco recém criado
     movq    INICIO, %rsi
     movq    $FREE_LABEL, (%rsi)
     movq    CHUNK_SIZE, %rax
@@ -106,11 +114,12 @@ iniciaAlocador:
     ret
 
 
-# Restaura brk para o valor inicial, redefine FIM
+# finalizaAlocador()
 finalizaAlocador:
     pushq   %rbp
     movq    %rsp, %rbp
 
+    # Restaura brk para o valor inicial e redefine FIM
     movq    $12, %rax
     movq    INICIO, %rdi
     syscall
@@ -137,7 +146,7 @@ expandDomain:
     call    brk
     movq    %rax, FIM
 
-    # Escreve LIVRE no novo bloco alocado
+    # Inicializa o novo bloco alocado
     movq    $FREE_LABEL, (%rsi)
     movq    CHUNK_SIZE, %rax
     movq    %rax, STATUS_LENGTH(%rsi)
@@ -191,6 +200,7 @@ imprimeMapa:
 
     movq    INICIO, %r8
 
+    # Inicia o laço para iterar sobre os blocos
     IMPRIME_START:
     cmpq    FIM, %r8
     je      IMPRIME_END
@@ -205,6 +215,8 @@ imprimeMapa:
 
     popq    %r8
 
+    # Determina qual char deve ser impresso
+
     movq    $MINUS, %r12
 
     movq    $FREE_LABEL, %r15
@@ -214,6 +226,7 @@ imprimeMapa:
 
     MINUS_CHAR:
 
+    # Inicia o laço de impressão
     pushq   %r8
 
     movq    STATUS_LENGTH(%r8), %r10
@@ -238,6 +251,7 @@ imprimeMapa:
 
     jmp     IMPRIME_LOOP
 
+    # Avança para o próximo bloco
     IMPRIME_NEXT:
     movq    $.BreakLine, %rdi
     movq    $0, %rax
@@ -252,12 +266,14 @@ imprimeMapa:
 
     jmp     IMPRIME_START
 
+    # Termina o procedimento
+
     IMPRIME_END:
     popq    %rbp
     ret
 
 
-# Este procedimento funde os blocos livres conectados em um bloco unico
+# Este procedimento funde os blocos livres conectados em um unico bloco
 mergeBlocks:
     pushq   %rbp
     movq    %rsp, %rbp
@@ -277,9 +293,9 @@ mergeBlocks:
     # Caso o bloco atual ou o próximo estejam fora do dominio, termina o merge
     TRY_TO_MERGE:
     cmpq    FIM, %r9
-    jge     MERGE_END
+    je     MERGE_END
     cmpq    FIM, %r10
-    jge     MERGE_END
+    je     MERGE_END
 
     # Ve se o bloco atual e o próximo estão livres
     cmpq    %rbx, (%r9)
@@ -339,7 +355,6 @@ printDomain:
     ret
 
 
-# Escreve free na label indicada pelo parâmetro, e então tenta fundir os blocos livres
 # liberaMem(long int)
 liberaMem:
     pushq   %rbp
@@ -351,22 +366,20 @@ liberaMem:
     subq    $SIZE_LENGTH, %rcx
     movq    $FREE_LABEL, (%rcx)
 
+    # Tenta fundir os blocos livres
     call    mergeBlocks
     
     popq    %rbp
     ret
 
 
-# alocaMem(long int)
-alocaMem:
+# params: %rdi = start, %rsi = limit, %r8 = block size to alloc ; return: %rax = valid address
+findFreeBlock:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    # Recupera o parâmetro
-    movq    %rdi, %r8
-
-    # Determina onde inicia a busca
-    movq    INICIO, %r9
+    # Recupera o parâmetro de início da busca
+    movq    %rdi, %r9
 
     START_WHILE:
     # Verifica se o bloco está livre
@@ -380,21 +393,36 @@ alocaMem:
 
     # Aponta para o próximo bloco
     BLOCK_NOT_FREE:
+
     movq    STATUS_LENGTH(%r9), %r15
     addq    %r15, %r9
     addq    $STATUS_LENGTH, %r9
     addq    $SIZE_LENGTH, %r9
 
     # Verifica se chegou no fim
-    cmpq    %r9, FIM
+    cmpq    %r9, %rsi
     jne     START_WHILE
-    # Expande o domínio
-    call    expandDomain  
-    jmp     START_WHILE
+
+    movq    $0, %rax
+    jmp     FIND_BLOCK_END
 
     FOUND_FREE_SPACE:
-    # Caso o espaços disponivel seja maior que o requerido, reparte o espaço
-    # Calcula o novo tamanho do bloco restante
+    movq    %r9, %rax
+
+    FIND_BLOCK_END:
+
+    popq    %rbp
+    ret
+
+
+# params: %rdi = onde alocar, %rsi = o quanto alocar
+allocBlock:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    movq    %rdi, %r9
+    movq    %rsi, %r8
+
     movq    STATUS_LENGTH(%r9), %r15
     subq    %r8, %r15
     subq    $STATUS_LENGTH, %r15
@@ -423,9 +451,131 @@ alocaMem:
     movq    $OCCUPIED_LABEL, (%r9)
     movq    %r8, STATUS_LENGTH(%r9)
 
+    popq    %rbp
+    ret
+
+
+firstFit:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    # Determina onde procurar
+    movq    INICIO, %rdi
+    movq    FIM, %rsi
+
+    # Procura por um bloco
+    FIRST_FIT_LOOP:
+    call    findFreeBlock
+
+    # Testa se achou um bloco válido
+    movq    $0, %r15
+    cmpq    %r15, %rax
+    jne     FIRST_FIT_FOUND_FREE_SPACE
+
+    # Atualiza onde procurar 
+    pushq   FIM
+    call    expandDomain
+    popq    %rdi
+    movq    FIM, %rsi
+
+    jmp     FIRST_FIT_LOOP
+
+    FIRST_FIT_FOUND_FREE_SPACE:
+
+    # Aloca o bloco no espaço encontrado
+    movq    %rax, %rdi
+    movq    %r8, %rsi
+
+    call    allocBlock
+
+
+    # Retorna o endereço do bloco 
     addq    $STATUS_LENGTH, %r9
     addq    $SIZE_LENGTH, %r9
     movq    %r9, %rax
 
+    popq    %rbp
+    ret
+
+
+nextFit:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    # Determina onde procurar
+    movq    LAST_FIT, %rdi
+    movq    FIM, %rsi
+
+    # Procura por um bloco
+    call    findFreeBlock
+
+    # Testa se achou um bloco válido
+    movq    $0, %r15
+    cmpq    %r15, %rax
+    jne     NEXT_FIT_FOUND_FREE_SPACE
+
+    # Atualiza onde procurar 
+    movq    INICIO, %rdi
+    movq    LAST_FIT, %rsi
+
+    # Procura por um bloco
+    call    findFreeBlock
+
+    # Testa se achou um bloco válido
+    movq    $0, %r15
+    cmpq    %r15, %rax
+    jne     NEXT_FIT_FOUND_FREE_SPACE
+
+    NEXT_FIT_LOOP:
+    # Atualiza onde procurar 
+    pushq   FIM
+    call    expandDomain
+    popq    %rdi
+    movq    FIM, %rsi
+
+    # Procura por um bloco
+    call    findFreeBlock
+
+    # Testa se achou um bloco válido
+    movq    $0, %r15
+    cmpq    %r15, %rax
+    jne     NEXT_FIT_FOUND_FREE_SPACE
+
+    jmp     NEXT_FIT_LOOP
+
+    NEXT_FIT_FOUND_FREE_SPACE:
+    # Aloca o bloco no espaço encontrado
+    movq    %rax, %rdi
+    movq    %r8, %rsi
+
+    call    allocBlock
+
+    # Atualiza o endereço de LAST_FIT para o próximo alloc
+    movq    %rdi, LAST_FIT
+    movq    STATUS_LENGTH(%rdi), %r15
+    addq    %r15, LAST_FIT
+    addq    $STATUS_LENGTH, LAST_FIT
+    addq    $SIZE_LENGTH, LAST_FIT
+
+    # Retorna o endereço do bloco 
+    addq    $STATUS_LENGTH, %rdi
+    addq    $SIZE_LENGTH, %rdi
+    movq    %rdi, %rax
+
+    popq    %rbp
+    ret
+    
+
+
+# alocaMem(long int)
+alocaMem:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    # Recupera o parâmetro
+    movq    %rdi, %r8
+
+    call    nextFit
+    
     popq    %rbp
     ret
