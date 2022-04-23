@@ -10,18 +10,25 @@ Retorno de funções: todos os retornos serão escritos em %rax
 .globl alocaMem
 .globl liberaMem
 .globl imprimeBlocos
+.globl imprimeMapa
 .globl _start
 
 .section .data
 INICIO: .quad   0
 FIM:    .quad   0
-CHUNK_SIZE: .quad   4096
+CHUNK_SIZE: .quad   300
 
 # Constantes
 .equ FREE_LABEL,        0
 .equ OCCUPIED_LABEL,    1
 .equ STATUS_LENGTH,     8
 .equ SIZE_LENGTH,       8
+
+.equ PLUS,      43
+.equ MINUS,     45
+
+.CharMask:
+    .string "%c"
 
 .PointerMask:
     .string "%p\n"
@@ -38,10 +45,14 @@ CHUNK_SIZE: .quad   4096
 .BlockMask:
     .string "| %ld | %5.ld |  %ld "
 
+.LabelsString:
+    .string "###############"
+
 .BreakLine:
     .string "\n"
 
 .section .text
+
 
 # brk(long int), o parâmetro vem em %rdi
 brk:
@@ -64,6 +75,7 @@ brk:
 
     popq    %rbp
     ret
+
 
 # iniciaAlocador()
 iniciaAlocador:
@@ -94,7 +106,7 @@ iniciaAlocador:
     ret
 
 
-/* Restaura brk para o valor inicial, redefine FIM*/
+# Restaura brk para o valor inicial, redefine FIM
 finalizaAlocador:
     pushq   %rbp
     movq    %rsp, %rbp
@@ -168,6 +180,79 @@ imprimeBlocos:
     movq    $0, %rax
     call    printf
 
+    popq    %rbp
+    ret
+    
+
+# imprimeMapa()
+imprimeMapa:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    movq    INICIO, %r8
+
+    IMPRIME_START:
+    cmpq    FIM, %r8
+    je      IMPRIME_END
+
+    # Imprime os bytes gerenciais
+
+    pushq   %r8
+
+    movq    $.LabelsString, %rdi
+    movq    $0, %rax
+    call    printf
+
+    popq    %r8
+
+    movq    $MINUS, %r12
+
+    movq    $FREE_LABEL, %r15
+    cmpq    %r15, (%r8)
+    je      MINUS_CHAR
+    movq    $PLUS, %r12
+
+    MINUS_CHAR:
+
+    pushq   %r8
+
+    movq    STATUS_LENGTH(%r8), %r10
+    movq    $1, %r11
+
+    IMPRIME_LOOP:
+    cmpq    %r11, %r10
+    jl      IMPRIME_NEXT
+
+    pushq   %r11
+    pushq   %r10
+
+    movq    $.CharMask, %rdi
+    movq    $0, %rax
+    movq    %r12, %rsi
+    call    printf
+
+    popq    %r10
+    popq    %r11
+
+    addq    $1, %r11
+
+    jmp     IMPRIME_LOOP
+
+    IMPRIME_NEXT:
+    movq    $.BreakLine, %rdi
+    movq    $0, %rax
+    call    printf
+
+    popq    %r8
+
+    movq    STATUS_LENGTH(%r8), %r9
+    addq    $STATUS_LENGTH, %r8
+    addq    $SIZE_LENGTH, %r8
+    addq    %r9, %r8
+
+    jmp     IMPRIME_START
+
+    IMPRIME_END:
     popq    %rbp
     ret
 
