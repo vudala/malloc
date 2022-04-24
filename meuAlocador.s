@@ -18,7 +18,7 @@ Parâmetros: os parâmetros são passados por registradores, seguindo a ordem: %
 .section .data
 INICIO: .quad   0
 FIM:    .quad   0
-CHUNK_SIZE: .quad   256
+CHUNK_SIZE: .quad   4096
 LAST_FIT: .quad   0
 
 # Constantes
@@ -26,6 +26,8 @@ LAST_FIT: .quad   0
 .equ OCCUPIED_LABEL,    1
 .equ STATUS_LENGTH,     8
 .equ SIZE_LENGTH,       8
+
+.equ NULL,  0
 
 .equ PLUS,      43
 .equ MINUS,     45
@@ -303,8 +305,15 @@ mergeBlocks:
     cmpq    %rbx, (%r10)
     jne     NEXT_BLOCK_NOT_FREE
 
-    # Casos estejam livres, adiciona o tamanho do próximo bloco no bloco atual
+    # Caso estejam livres, adiciona o tamanho do próximo bloco no bloco atual
     MERGE_IT:
+
+    # Caso LAST_FIT seja desapontado pelo merge, redefine LAST_FIT para ser o bloco atual
+    cmpq    %r10, LAST_FIT
+    jne     NOT_LAST_FIT
+    movq    %r9, LAST_FIT
+
+    NOT_LAST_FIT:
     movq    STATUS_LENGTH(%r10), %r11
     addq    %r11, STATUS_LENGTH(%r9)
     addq    $STATUS_LENGTH, STATUS_LENGTH(%r9)
@@ -415,7 +424,7 @@ findFreeBlock:
     ret
 
 
-# params: %rdi = onde alocar, %rsi = o quanto alocar
+# params: %rdi = onde alocar, %rsi = o quanto alocar; return %rax = endereco do bloco
 allocBlock:
     pushq   %rbp
     movq    %rsp, %rbp
@@ -450,6 +459,9 @@ allocBlock:
     # Escreve OCUPADO no bloco, e seu novo tamanho
     movq    $OCCUPIED_LABEL, (%r9)
     movq    %r8, STATUS_LENGTH(%r9)
+
+    # Retorna o endereço do bloco
+    movq    %r9, %rax
 
     popq    %rbp
     ret
@@ -487,12 +499,6 @@ firstFit:
     movq    %r8, %rsi
 
     call    allocBlock
-
-
-    # Retorna o endereço do bloco 
-    addq    $STATUS_LENGTH, %r9
-    addq    $SIZE_LENGTH, %r9
-    movq    %r9, %rax
 
     popq    %rbp
     ret
@@ -558,14 +564,108 @@ nextFit:
     addq    $SIZE_LENGTH, LAST_FIT
 
     # Retorna o endereço do bloco 
-    addq    $STATUS_LENGTH, %rdi
-    addq    $SIZE_LENGTH, %rdi
     movq    %rdi, %rax
 
     popq    %rbp
     ret
-    
 
+
+findBestFit:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    # Bloco atual
+    movq    %rdi, %r9
+
+    # Menor bloco
+    movq    $NULL, %r10
+
+    BEST_LOOP_START:
+    # Verifica se o bloco está livre
+    movq    $FREE_LABEL, %r15
+    cmpq    %r15, (%r9)
+    jne     BEST_NEXT_BLOCK
+
+    # Verifica se há espaço o suficiente
+    movq    STATUS_LENGTH(%r9), %r15
+    cmpq    %r8, %r15
+    jl      BEST_NEXT_BLOCK
+
+
+    # Verifica se %r10 já foi definido
+    movq    $0, %r15
+    cmpq    %r10, %r15
+    jne     LESSER_NOT_NULL
+
+    movq    %r9, %r10
+    jmp     BEST_NEXT_BLOCK
+
+    LESSER_NOT_NULL:
+    # Verifica se é o menor bloco até o momento
+    movq    STATUS_LENGTH(%r9), %r15
+    cmpq    %r8, %r15
+    jl      BEST_NEXT_BLOCK
+
+    movq    STATUS_LENGTH(%r9), %r15
+    cmpq    STATUS_LENGTH(%r10), %r15
+    jge     BEST_NEXT_BLOCK
+
+    movq    %r9, %r10
+
+    BEST_NEXT_BLOCK:
+
+    movq    STATUS_LENGTH(%r9), %r15
+    addq    %r15, %r9
+    addq    $STATUS_LENGTH, %r9
+    addq    $SIZE_LENGTH, %r9
+
+    cmpq    %rsi, %r9
+    je      BEST_END
+    jmp     BEST_LOOP_START
+
+    BEST_END:
+    movq    %r10, %rax
+
+    popq    %rbp
+    ret
+
+
+bestFit:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    # Determina onde procurar
+    movq    INICIO, %rdi
+    movq    FIM, %rsi
+
+    # Procura por um bloco
+    BEST_FIT_LOOP:
+    call    findBestFit
+
+    # Testa se achou um bloco válido
+    movq    $0, %r15
+    cmpq    %r15, %rax
+    jne     BEST_FIT_FOUND_FREE_SPACE
+
+    # Atualiza onde procurar 
+    pushq   FIM
+    call    expandDomain
+    popq    %rdi
+    movq    FIM, %rsi
+
+    jmp     BEST_FIT_LOOP
+
+    BEST_FIT_FOUND_FREE_SPACE:
+
+    # Aloca o bloco no espaço encontrado
+    movq    %rax, %rdi
+    movq    %r8, %rsi
+
+    call    allocBlock
+
+    popq    %rbp
+    ret
+    
 
 # alocaMem(long int)
 alocaMem:
@@ -575,7 +675,11 @@ alocaMem:
     # Recupera o parâmetro
     movq    %rdi, %r8
 
-    call    nextFit
+    call    bestFit
+
+    # Retorna o começo da área de memória a ser utilizada
+    addq    $STATUS_LENGTH, %rax
+    addq    $SIZE_LENGTH, %rax
     
     popq    %rbp
     ret
