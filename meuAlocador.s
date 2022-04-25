@@ -377,6 +377,8 @@ liberaMem:
 
     # Tenta fundir os blocos livres
     call    mergeBlocks
+
+    movq    %rcx, LAST_FIT
     
     popq    %rbp
     ret
