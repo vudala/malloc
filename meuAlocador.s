@@ -11,9 +11,7 @@ Parâmetros: os parâmetros são passados por registradores, seguindo a ordem: %
 .globl finalizaAlocador
 .globl alocaMem
 .globl liberaMem
-.globl imprimeBlocos
 .globl imprimeMapa
-.globl _start
 
 .section .data
 INICIO: .quad   0
@@ -35,20 +33,8 @@ LAST_FIT: .quad   0
 .CharMask:
     .string "%c"
 
-.PointerMask:
-    .string "%p\n"
-
-.IntegerMask:
-    .string "%ld\n"
-
-.StringMask:
-    .string "%s\n"
-
 .StartString:
     .string "Start\n"
-
-.BlockMask:
-    .string "| %ld | %5.ld |  %ld "
 
 .LabelsString:
     .string "###############"
@@ -152,44 +138,6 @@ expandDomain:
     movq    $FREE_LABEL, (%rsi)
     movq    CHUNK_SIZE, %rax
     movq    %rax, STATUS_LENGTH(%rsi)
-
-    popq    %rbp
-    ret
-
-
-imprimeBlocos:
-    pushq   %rbp
-    movq    %rsp, %rbp
-
-    movq    INICIO, %r11
-
-    PRINT_START:
-    cmpq    FIM, %r11
-    jge     PRINT_END
-
-    pushq   %r11
-    
-    movq    %r11, %rcx
-    movq    STATUS_LENGTH(%r11), %rdx
-    movq    (%r11), %rsi
-    movq    $.BlockMask, %rdi
-    movq    $0, %rax
-    call    printf
-
-    popq    %r11
-    
-    movq    STATUS_LENGTH(%r11), %r12
-    addq    $STATUS_LENGTH, %r11
-    addq    $SIZE_LENGTH, %r11
-    addq    %r12, %r11
-
-    jmp     PRINT_START
-
-    PRINT_END:
-
-    movq    $.BreakLine, %rdi
-    movq    $0, %rax
-    call    printf
 
     popq    %rbp
     ret
@@ -345,23 +293,7 @@ mergeBlocks:
     ret
 
 
-# Imprime os endereços do começo e do fim do domínio
-printDomain:
-    pushq   %rbp
-    movq    %rsp, %rbp
 
-    movq    INICIO, %rsi
-    movq    $.IntegerMask, %rdi
-    movq	$0, %rax
-    call    printf
-
-    movq    FIM, %rsi
-    movq    $.IntegerMask, %rdi
-    movq	$0, %rax
-    call    printf
-
-    popq    %rbp
-    ret
 
 
 # liberaMem(long int)
@@ -377,6 +309,8 @@ liberaMem:
 
     # Tenta fundir os blocos livres
     call    mergeBlocks
+
+    movq    %rcx, LAST_FIT
     
     popq    %rbp
     ret
@@ -675,7 +609,7 @@ alocaMem:
     # Recupera o parâmetro
     movq    %rdi, %r8
 
-    call    bestFit
+    call    nextFit
 
     # Retorna o começo da área de memória a ser utilizada
     addq    $STATUS_LENGTH, %rax
