@@ -16,7 +16,7 @@ Parâmetros: os parâmetros são passados por registradores, seguindo a ordem: %
 .section .data
 INICIO: .quad   0
 FIM:    .quad   0
-CHUNK_SIZE: .quad   512
+CHUNK_SIZE: .quad   64
 LAST_FIT: .quad   0
 
 # Constantes
@@ -119,7 +119,7 @@ finalizaAlocador:
     popq    %rbp
     ret
 
-
+# retunr: %rax = endereço do último bloco livre
 expandDomain:
     pushq   %rbp
     movq    %rsp, %rbp
@@ -141,6 +141,8 @@ expandDomain:
     movq    $FREE_LABEL, (%rsi)
     movq    CHUNK_SIZE, %rax
     movq    %rax, STATUS_LENGTH(%rsi)
+
+    call    mergeBlocks
 
     popq    %rbp
     ret
@@ -243,10 +245,8 @@ mergeBlocks:
     addq    $SIZE_LENGTH, %r10
     addq    STATUS_LENGTH(%r9), %r10
 
-    # Caso o bloco atual ou o próximo estejam fora do dominio, termina o merge
+    # Caso o próximo bloco esteja fora do dominio, termina o merge
     TRY_TO_MERGE:
-    cmpq    FIM, %r9
-    je     MERGE_END
     cmpq    FIM, %r10
     je     MERGE_END
 
@@ -291,6 +291,8 @@ mergeBlocks:
     jmp     START_WHILE_MERGE
 
     MERGE_END:
+
+    movq    %r9, %rax
 
     popq    %rbp
     ret
@@ -447,9 +449,8 @@ firstFit:
     jne     FIRST_FIT_FOUND_FREE_SPACE
 
     # Atualiza onde procurar 
-    pushq   FIM
     call    expandDomain
-    popq    %rdi
+    movq    %rax, %rdi
     movq    FIM, %rsi
 
     jmp     FIRST_FIT_LOOP
@@ -496,9 +497,8 @@ nextFit:
 
     NEXT_FIT_LOOP:
     # Atualiza onde procurar 
-    pushq   FIM
     call    expandDomain
-    popq    %rdi
+    movq    %rax, %rdi
     movq    FIM, %rsi
 
     # Procura por um bloco
@@ -607,9 +607,8 @@ bestFit:
     jne     BEST_FIT_FOUND_FREE_SPACE
 
     # Atualiza onde procurar 
-    pushq   FIM
     call    expandDomain
-    popq    %rdi
+    movq    %rax, %rdi
     movq    FIM, %rsi
 
     jmp     BEST_FIT_LOOP
@@ -634,7 +633,7 @@ alocaMem:
     # Recupera o parâmetro
     movq    %rdi, %r8
 
-    call    bestFit
+    call    nextFit
 
     # Retorna o começo da área de memória a ser utilizada
     addq    $STATUS_LENGTH, %rax
