@@ -301,10 +301,17 @@ liberaMem:
     pushq   %rbp
     movq    %rsp, %rbp
 
+    # Caso esteja tentando liberar um ptr NULL não faz nada
+    movq    $NULL, %r15
+    cmpq    %r15, %rdi
+    je      LIBERA_END
+
+    # Armazena o endereço do começo do bloco em %rcx
     movq    %rdi, %rcx
     subq    $STATUS_LENGTH, %rcx
     subq    $SIZE_LENGTH, %rcx
 
+    # Verifica se deu double free
     movq    $FREE_LABEL, %r15
     cmpq    (%rcx), %r15
     jne     FREE_BLOCK
@@ -326,6 +333,8 @@ liberaMem:
     call    mergeBlocks
 
     movq    %rcx, LAST_FIT
+
+    LIBERA_END:
     
     popq    %rbp
     ret
@@ -530,6 +539,9 @@ findBestFit:
     movq    $NULL, %r10
 
     BEST_LOOP_START:
+    cmpq    %rsi, %r9
+    je      BEST_END
+
     # Verifica se o bloco está livre
     movq    $FREE_LABEL, %r15
     cmpq    %r15, (%r9)
@@ -568,8 +580,6 @@ findBestFit:
     addq    $STATUS_LENGTH, %r9
     addq    $SIZE_LENGTH, %r9
 
-    cmpq    %rsi, %r9
-    je      BEST_END
     jmp     BEST_LOOP_START
 
     BEST_END:
@@ -624,7 +634,7 @@ alocaMem:
     # Recupera o parâmetro
     movq    %rdi, %r8
 
-    call    nextFit
+    call    bestFit
 
     # Retorna o começo da área de memória a ser utilizada
     addq    $STATUS_LENGTH, %rax
