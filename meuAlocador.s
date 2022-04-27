@@ -16,7 +16,7 @@ Parâmetros: os parâmetros são passados por registradores, seguindo a ordem: %
 .section .data
 INICIO: .quad   0
 FIM:    .quad   0
-CHUNK_SIZE: .quad   4096
+CHUNK_SIZE: .quad   512
 LAST_FIT: .quad   0
 
 # Constantes
@@ -38,6 +38,9 @@ LAST_FIT: .quad   0
 
 .LabelsString:
     .string "###############"
+
+.DoubleFreeLabel:
+    .string "abort: double free\n"
 
 .BreakLine:
     .string "\n"
@@ -291,20 +294,32 @@ mergeBlocks:
 
     popq    %rbp
     ret
-
-
-
-
+    
 
 # liberaMem(long int)
 liberaMem:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    # Escreve LIVRE no bloco
     movq    %rdi, %rcx
     subq    $STATUS_LENGTH, %rcx
     subq    $SIZE_LENGTH, %rcx
+
+    movq    $FREE_LABEL, %r15
+    cmpq    (%rcx), %r15
+    jne     FREE_BLOCK
+
+    movq    $.DoubleFreeLabel, %rdi
+    movq    $0, %rax
+    call    printf
+
+    movq    $1, %rdi
+    movq    $60, %rax
+    syscall
+
+    FREE_BLOCK:
+
+    # Escreve LIVRE no bloco
     movq    $FREE_LABEL, (%rcx)
 
     # Tenta fundir os blocos livres
@@ -325,6 +340,15 @@ findFreeBlock:
     movq    %rdi, %r9
 
     START_WHILE:
+
+    # Verifica se chegou no fim
+    cmpq    %r9, %rsi
+    jne     CHECK_BLOCK
+
+    movq    $0, %rax
+    jmp     FIND_BLOCK_END
+    
+    CHECK_BLOCK:
     # Verifica se o bloco está livre
     movq    $FREE_LABEL, %r15
     cmpq    (%r9), %r15
@@ -342,12 +366,7 @@ findFreeBlock:
     addq    $STATUS_LENGTH, %r9
     addq    $SIZE_LENGTH, %r9
 
-    # Verifica se chegou no fim
-    cmpq    %r9, %rsi
-    jne     START_WHILE
-
-    movq    $0, %rax
-    jmp     FIND_BLOCK_END
+    jmp     START_WHILE
 
     FOUND_FREE_SPACE:
     movq    %r9, %rax
@@ -492,10 +511,6 @@ nextFit:
 
     # Atualiza o endereço de LAST_FIT para o próximo alloc
     movq    %rdi, LAST_FIT
-    movq    STATUS_LENGTH(%rdi), %r15
-    addq    %r15, LAST_FIT
-    addq    $STATUS_LENGTH, LAST_FIT
-    addq    $SIZE_LENGTH, LAST_FIT
 
     # Retorna o endereço do bloco 
     movq    %rdi, %rax
