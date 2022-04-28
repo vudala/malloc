@@ -16,7 +16,7 @@ Parâmetros: os parâmetros são passados por registradores, seguindo a ordem: %
 .section .data
 INICIO: .quad   0
 FIM:    .quad   0
-CHUNK_SIZE: .quad   64
+CHUNK_SIZE: .quad   4096
 LAST_FIT: .quad   0
 
 # Constantes
@@ -334,8 +334,6 @@ liberaMem:
     # Tenta fundir os blocos livres
     call    mergeBlocks
 
-    movq    %rcx, LAST_FIT
-
     LIBERA_END:
     
     popq    %rbp
@@ -614,6 +612,103 @@ bestFit:
     jmp     BEST_FIT_LOOP
 
     BEST_FIT_FOUND_FREE_SPACE:
+
+    # Aloca o bloco no espaço encontrado
+    movq    %rax, %rdi
+    movq    %r8, %rsi
+
+    call    allocBlock
+
+    popq    %rbp
+    ret
+
+
+findWorstFit:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    # Bloco atual
+    movq    %rdi, %r9
+
+    # Menor bloco
+    movq    $NULL, %r10
+
+    WORST_LOOP_START:
+    cmpq    %rsi, %r9
+    je      WORST_END
+
+    # Verifica se o bloco está livre
+    movq    $FREE_LABEL, %r15
+    cmpq    %r15, (%r9)
+    jne     WORST_NEXT_BLOCK
+
+    # Verifica se há espaço o suficiente
+    movq    STATUS_LENGTH(%r9), %r15
+    cmpq    %r8, %r15
+    jl      WORST_NEXT_BLOCK
+
+
+    # Verifica se %r10 já foi definido
+    movq    $0, %r15
+    cmpq    %r10, %r15
+    jne     GREATER_NOT_NULL
+
+    movq    %r9, %r10
+    jmp     WORST_NEXT_BLOCK
+
+    GREATER_NOT_NULL:
+    # Verifica se é o maior bloco até o momento
+    movq    STATUS_LENGTH(%r9), %r15
+    cmpq    %r8, %r15
+    jl      WORST_NEXT_BLOCK
+
+    movq    STATUS_LENGTH(%r9), %r15
+    cmpq    STATUS_LENGTH(%r10), %r15
+    jle     WORST_NEXT_BLOCK
+
+    movq    %r9, %r10
+
+    WORST_NEXT_BLOCK:
+
+    movq    STATUS_LENGTH(%r9), %r15
+    addq    %r15, %r9
+    addq    $STATUS_LENGTH, %r9
+    addq    $SIZE_LENGTH, %r9
+
+    jmp     WORST_LOOP_START
+
+    WORST_END:
+    movq    %r10, %rax
+
+    popq    %rbp
+    ret
+
+
+worstFit:
+    pushq   %rbp
+    movq    %rsp, %rbp
+
+    # Determina onde procurar
+    movq    INICIO, %rdi
+    movq    FIM, %rsi
+
+    # Procura por um bloco
+    WORST_FIT_LOOP:
+    call    findWorstFit
+
+    # Testa se achou um bloco válido
+    movq    $0, %r15
+    cmpq    %r15, %rax
+    jne     WORST_FIT_FOUND_FREE_SPACE
+
+    # Atualiza onde procurar 
+    call    expandDomain
+    movq    %rax, %rdi
+    movq    FIM, %rsi
+
+    jmp     WORST_FIT_LOOP
+
+    WORST_FIT_FOUND_FREE_SPACE:
 
     # Aloca o bloco no espaço encontrado
     movq    %rax, %rdi
