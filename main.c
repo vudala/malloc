@@ -85,7 +85,6 @@ int main(){
         imprimeMapa();
         printf("aqui liberamos 100 \n");
         liberaMem(b);
-        printf("note que ponteiroAtual teve que ser realocado pois o bloco de 100 foi fusionado\n");
         fflush(stdout); 
         imprimeMapa();
         d=alocaMem(30); 
@@ -160,9 +159,9 @@ int main(){
                     coisa[k] = NULL;
                     printf("aqui liberamos um bloco de %i bytes \n", size);
                     fflush(stdout);
-                    imprimeMapa();
                 }
-            }    
+            }
+            imprimeMapa();
         }
     break;
 
